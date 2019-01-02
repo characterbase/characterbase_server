@@ -1,0 +1,6 @@
+{
+    "go.testFlags": [
+        "-tc",
+        "/Users/kinesivan/.go/src/cbs/config.testing.yaml",
+    ]
+}
