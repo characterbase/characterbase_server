@@ -22,13 +22,18 @@ func newAPIKey() string {
 // Authenticate returns a User if the passed credentials are valid
 func (s *Service) Authenticate(email, password string) (*models.User, error) {
 	var user models.User
-	if err := s.Providers.DB.Select("password_hash").Where("email = ?", email).First(&user).Error; err != nil {
+	if err := s.Providers.DB.Get(&user, "SELECT password_hash FROM users WHERE email = $1", email); err != nil {
 		return nil, err
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, err
+		return nil, api.ErrBadAuth("")
 	}
-	if err := s.Providers.DB.Where("email = ?", email).First(&user).Error; err != nil {
+	user = models.User{}
+	if err := s.Providers.DB.Get(
+		&user,
+		"SELECT id, display_name, email FROM users WHERE email = $1",
+		email,
+	); err != nil {
 		return nil, err
 	}
 	return &user, nil

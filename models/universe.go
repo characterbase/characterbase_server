@@ -1,13 +1,11 @@
 package models
 
 import (
+	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"fmt"
 
-	validator "gopkg.in/go-playground/validator.v9"
-
-	"github.com/jinzhu/gorm/dialects/postgres"
+	"github.com/mitchellh/mapstructure"
 )
 
 // ProgressBarColor represents a bar color for a Progress field with show bar enabled
@@ -52,19 +50,20 @@ var (
 
 // Universe represents a CharacterBase universe
 type Universe struct {
-	Generic
-	Name        string         `json:"name" gorm:"not null" validate:"required,omitempty"`
-	Description string         `json:"description"`
-	Guide       postgres.Jsonb `json:"guide"`
-	Settings    postgres.Jsonb `json:"settings"`
+	ID          string            `json:"id" db:"id"`
+	Name        string            `json:"name" db:"name"`
+	Description string            `json:"description" db:"description"`
+	Guide       *UniverseGuide    `json:"guide" db:"guide"`
+	Settings    *UniverseSettings `json:"settings" db:"settings"`
 }
 
 // UniverseReference represents a stripped version of Universe,
 // used when sending multiple Universe instances over the API
 // for network optimization purposes
 type UniverseReference struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID   string           `json:"id"`
+	Name string           `json:"name"`
+	Role CollaboratorRole `json:"role"`
 }
 
 // UniverseSettings represents settings for a universe
@@ -75,121 +74,156 @@ type UniverseSettings struct {
 
 // UniverseGuide represents a universe guide
 type UniverseGuide struct {
-	Groups *[]UniverseGuideGroup `json:"groups"`
+	Groups *[]UniverseGuideGroup `json:"groups" validate:"dive"` // "dive" is necessary so slices can get validated
 }
 
 // UniverseGuideGroup represents a field group inside of a universe guide
 type UniverseGuideGroup struct {
-	Name   string                `json:"name"`
-	Fields *[]UniverseGuideField `json:"fields"`
+	Name     string                `json:"name" validate:"required"`
+	Fields   *[]UniverseGuideField `json:"fields" validate:"min=1,dive"`
+	Required bool                  `json:"required"`
 }
 
 // UniverseGuideField represents a field inside of a universe guide
 type UniverseGuideField struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Required    bool        `json:"required"`
-	Default     interface{} `json:"default"`
-	Meta        interface{} `json:"meta"`
+	Name        string         `json:"name" validate:"required"`
+	Type        GuideFieldType `json:"type" validate:"oneof=text description number progress options list picture"`
+	Description string         `json:"description"`
+	Required    bool           `json:"required"`
+	Default     interface{}    `json:"default"`
+	Meta        interface{}    `json:"meta" validate:"required"`
 }
 
 // UniverseGuideMetaText represents universe guide settings regarding a Text field
 type UniverseGuideMetaText struct {
-	Pattern   string `json:"pattern"`
-	MinLength int    `json:"min_length"`
-	MaxLength int    `json:"max_length"`
+	Pattern   string `json:"pattern" mapstructure:"pattern"`
+	MinLength int    `json:"min_length" mapstructure:"min_length" validate:"gte=0"`
+	MaxLength int    `json:"max_length" mapstructure:"max_length" validate:"gtecsfield=MinLength"`
 }
 
 // UniverseGuideMetaDescription represents universe guide settings regarding a Description field
 type UniverseGuideMetaDescription struct {
-	Markdown  bool `json:"markdown"`
-	MinLength int  `json:"min_length"`
-	MaxLength int  `json:"max_length"`
+	Markdown  bool `json:"markdown" mapstructure:"markdown"`
+	MinLength int  `json:"min_length" mapstructure:"min_length" validate:"gte=0"`
+	MaxLength int  `json:"max_length" mapstructure:"max_length" validate:"gtecsfield=MinLength"`
 }
 
 // UniverseGuideMetaNumber represents universe guide settings regarding a Number field
 type UniverseGuideMetaNumber struct {
-	Float bool    `json:"float"`
-	Min   float32 `json:"min"`
-	Max   float32 `json:"max"`
-	Tick  float32 `json:"tick"`
+	Float bool    `json:"float" mapstructure:"float"`
+	Min   float64 `json:"min" mapstructure:"min"`
+	Max   float64 `json:"max" mapstructure:"max" validate:"gtecsfield=Min"`
+	Tick  float64 `json:"tick" mapstructure:"tick" validate:"gte=0"`
 }
 
 // UniverseGuideMetaProgress represents universe guide settings regarding a Progress field
 type UniverseGuideMetaProgress struct {
-	Bar   bool             `json:"bar"`
-	Color ProgressBarColor `json:"color"`
-	Min   int              `json:"min"`
-	Max   int              `json:"max"`
-	Tick  float32          `json:"tick"`
+	Bar   bool             `json:"bar" mapstructure:"bar"`
+	Color ProgressBarColor `json:"color" mapstructure:"color" validate:"oneof=red yellow green blue teal gray dark"`
+	Min   float64          `json:"min" mapstructure:"min" validate:"gte=0"`
+	Max   float64          `json:"max" mapstructure:"max" validate:"gtecsfield=Min"`
+	Tick  float64          `json:"tick" mapstructure:"tick" validate:"gte=0,ltecsfield=Max"`
 }
 
 // UniverseGuideMetaOptions represents unvierse guide settings regarding an Options field
 type UniverseGuideMetaOptions struct {
-	Multiple bool     `json:"multiple"`
-	Options  []string `json:"options"`
+	Multiple bool     `json:"multiple" mapstructure:"multiple"`
+	Options  []string `json:"options" mapstructure:"options" validate:"min=1"`
 }
 
 // UniverseGuideMetaList represents universe guide settings regarding a List field
 type UniverseGuideMetaList struct {
-	MinElements int `json:"min_elements"`
-	MaxElements int `json:"max_elements"`
+	MinElements int `json:"min_elements" mapstructure:"min_elements" validate:"gte=0"`
+	MaxElements int `json:"max_elements" mapstructure:"max_elements" validate:"gtecsfield=MinElements"`
 }
 
 // Collaborator represents a universe collaborator
 // NOTE: At the current time, GORM doesn't automatically create
 // foreign keys with struct tags, so an explicit SQL tag is necessary
 type Collaborator struct {
-	UniverseID string           `json:"universe_id" gorm:"primary_key" sql:"type:text REFERENCES universes(id)"`
-	UserID     string           `json:"user_id" gorm:"primary_key" sql:"type:text REFERENCES users(id)"`
-	Role       CollaboratorRole `json:"role"`
+	UniverseID string           `json:"-" db:"universe_id"`
+	UserID     string           `json:"user_id,omitempty" db:"user_id"`
+	User       *User            `json:"user,omitempty" db:"user"`
+	Role       CollaboratorRole `json:"role" db:"role"`
 }
 
-// GetGuide returns the deserialized value of the universe's guide
-func (u *Universe) GetGuide() (*UniverseGuide, error) {
-	var guide UniverseGuide
-	data, err := u.Guide.MarshalJSON()
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(data, &guide); err != nil {
-		return nil, err
-	}
-	fmt.Printf("%+v\n", guide)
-	return &guide, nil
+// Value returns a serialized representation of this guide
+func (ug *UniverseGuide) Value() (driver.Value, error) {
+	return json.Marshal(ug)
 }
 
-// GetSettings returns the deserialized value of the universe's settings
-func (u *Universe) GetSettings() (*UniverseSettings, error) {
-	var settings UniverseSettings
-	data, err := u.Settings.MarshalJSON()
-	if err != nil {
-		return nil, err
+// Scan deserializes the serialized representation of this guide
+func (ug *UniverseGuide) Scan(val interface{}) error { // "val" represents current type of data scanned from database
+	switch v := val.(type) {
+	case []byte:
+		json.Unmarshal(v, &ug)
+	case string:
+		json.Unmarshal([]byte(v), &ug)
+	default:
+		return fmt.Errorf("Unsupported type: %T", v)
 	}
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return nil, err
+	if err := ug.SetFieldMeta(); err != nil {
+		return err
 	}
-	return &settings, nil
+	return nil
 }
 
-// Validate validates the Universe, including its guide and settings
-func (u *Universe) Validate() (error, error) {
-	v := validator.New()
-	v.RegisterTagNameFunc(ValidatorJSONPlugin)
-	guide, err := u.GetGuide()
-	if err != nil {
-		return errors.New("failed to get guide")
+// Value returns a serialized representation of this settings
+func (us *UniverseSettings) Value() (driver.Value, error) {
+	return json.Marshal(us)
+}
+
+// Scan deserializes the serialized representation of this settings
+func (us *UniverseSettings) Scan(val interface{}) error { // "val" represents current type of data scanned from database
+	switch v := val.(type) {
+	case []byte:
+		json.Unmarshal(v, &us)
+		return nil
+	case string:
+		json.Unmarshal([]byte(v), &us)
+		return nil
+	default:
+		return fmt.Errorf("Unsupported type: %T", v)
 	}
-	settings, err := u.GetSettings()
-	if err != nil {
-		return errors.New("failed to get settings")
-	}
-	uerr := v.Struct(u)
-	if uerr != nil {
-		verr, err := GetValidationError(uerr)
-		if err != nil {
+}
+
+// SetFieldMeta sets the appropriate meta structs for the universe guide's fields based on their types
+func (ug *UniverseGuide) SetFieldMeta() error {
+	var err error
+	for i, v := range *ug.Groups {
+		g := (*ug.Groups)[i]
+		for j, f := range *v.Fields {
+			switch f.Type {
+			case GuideFieldText:
+				m := UniverseGuideMetaText{}
+				err = mapstructure.Decode(f.Meta, &m)
+				fmt.Println(m)
+				(*g.Fields)[j].Meta = m
+			case GuideFieldDescription:
+				m := UniverseGuideMetaDescription{}
+				err = mapstructure.Decode(f.Meta, &m)
+				(*g.Fields)[j].Meta = m
+			case GuideFieldNumber:
+				m := UniverseGuideMetaNumber{}
+				err = mapstructure.Decode(f.Meta, &m)
+				(*g.Fields)[j].Meta = m
+			case GuideFieldProgress:
+				m := UniverseGuideMetaProgress{}
+				err = mapstructure.Decode(f.Meta, &m)
+				(*g.Fields)[j].Meta = m
+			case GuideFieldOptions:
+				m := UniverseGuideMetaOptions{}
+				err = mapstructure.Decode(f.Meta, &m)
+				(*g.Fields)[j].Meta = m
+			case GuideFieldList:
+				m := UniverseGuideMetaList{}
+				err = mapstructure.Decode(f.Meta, &m)
+				(*g.Fields)[j].Meta = m
+			}
 		}
 	}
-	gerr := v.Struct(guide)
-	serr := v.Struct(settings)
+	if err != nil {
+		return err
+	}
+	return nil
 }

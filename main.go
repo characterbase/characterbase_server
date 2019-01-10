@@ -3,9 +3,9 @@ package main
 import (
 	"cbs/api"
 	"cbs/api/auth"
+	"cbs/api/characters"
 	"cbs/api/universes"
 	"cbs/api/users"
-	"cbs/models"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,10 +13,11 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/go-redis/redis"
 
 	"github.com/go-chi/chi/middleware"
-	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -40,9 +41,10 @@ func loadConfig(path string) (*api.Config, error) {
 
 func newServices(providers *api.Providers, config *api.Config) *api.Services {
 	return &api.Services{
-		Auth:     &auth.Service{Providers: providers, Config: config},
-		User:     &users.Service{Providers: providers, Config: config},
-		Universe: &universes.Service{Providers: providers, Config: config},
+		Auth:      &auth.Service{Providers: providers, Config: config},
+		User:      &users.Service{Providers: providers, Config: config},
+		Universe:  &universes.Service{Providers: providers, Config: config},
+		Character: &characters.Service{Providers: providers, Config: config},
 	}
 }
 
@@ -57,6 +59,7 @@ func newServer(config api.Config, providers *api.Providers) *api.Server {
 	server.Mount("/", auth.NewRouter(server))
 	server.Mount("/users", users.NewRouter(server))
 	server.Mount("/universes", universes.NewRouter(server))
+	server.Mount("/universes/{universeID}/characters", characters.NewRouter(server))
 
 	return server
 }
@@ -73,25 +76,11 @@ func main() {
 
 	// Connect to the database
 	log.Printf("Connecting to database... (url: %v)\n", config.DatabaseURL)
-	db, err := gorm.Open("postgres", config.DatabaseURL)
+	db, err := sqlx.Connect("postgres", config.DatabaseURL)
 	if err != nil {
 		panic(err)
 	}
 	log.Printf("Database connection OK\n")
-
-	// IMPORTANT: Disable GORM automatically handling associations
-	db.Set("gorm:association_autoupdate", false)
-	db.Set("gorm:association_autocreate", false)
-	db.Set("gorm:save_associations", false)
-	db.Set("gorm:association_save_reference", false)
-
-	db.AutoMigrate(
-		&models.User{},
-		&models.Universe{},
-		&models.Collaborator{},
-		&models.Character{},
-		&models.CharacterImage{},
-	)
 
 	// Connect to the Redis store
 	log.Printf("Connecting to Redis... (url: %v)\n", config.RedisURL)

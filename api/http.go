@@ -4,12 +4,15 @@ import (
 	"cbs/models"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"reflect"
+	"strings"
 
 	"github.com/go-chi/chi"
-	validate "gopkg.in/go-playground/validator.v9"
+	validator "gopkg.in/go-playground/validator.v9"
 )
 
 // ContextKey represents a key for accessing API request context values
@@ -21,6 +24,12 @@ const (
 
 	// CollaboratorContextKey represents a context key for accessing the user collaborator from the request context
 	CollaboratorContextKey
+
+	// UniverseContextKey represents a context key for accessing the universe from the request context
+	UniverseContextKey
+
+	// CharacterContextKey represents a context key for accessing the character from the request context
+	CharacterContextKey
 )
 
 // Router represents a router with access to the database
@@ -29,11 +38,51 @@ type Router struct {
 	*Server
 }
 
+// Handler represents a generic HTTP handler with improved error-handling support
+type Handler func(w http.ResponseWriter, r *http.Request) error
+
+func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	err := h(w, r)
+	if err != nil {
+		apierr, ok := err.(Error)
+		if !ok {
+			SendError(w, ErrInternal(err.Error()))
+		} else {
+			SendError(w, apierr)
+		}
+	}
+}
+
 func addAPIHeaders(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// Response status must be set after all other headers
 	w.WriteHeader(status)
+}
+
+// ValidatorJSONPlugin serves as a plugin for go-validator
+// that recognizes JSON tags when validating structs
+func ValidatorJSONPlugin(fld reflect.StructField) string {
+	name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
+	if name == "-" {
+		return ""
+	}
+	return name
+}
+
+// GetValidationError returns a simplified error
+// from go-validator validation results
+func GetValidationError(err error) (string, error) {
+	valError, ok := err.(validator.ValidationErrors)
+	fmt.Printf("%T\n", err)
+	if !ok {
+		return "", errors.New("failed to validate")
+	}
+	if len(valError) > 0 {
+		fmt.Println(valError[0])
+		return fmt.Sprintf("%v failed validation", valError[0].Field()), nil
+	}
+	return "", nil
 }
 
 // SendError sends a failed API response to the ResponseWriter
@@ -60,7 +109,7 @@ func ReadBody(body io.ReadCloser, out interface{}) error {
 		return err
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return err
+		return ErrBadBody("Failed to parse body")
 	}
 	return nil
 }
@@ -68,46 +117,39 @@ func ReadBody(body io.ReadCloser, out interface{}) error {
 // ValidateDTO validates a request body DTO according to its struct tags
 // TODO: Cache validator into a singleton?
 func ValidateDTO(body interface{}) (*Error, error) {
-	validator := validate.New()
+	v := validator.New()
 
 	// Allow the validator to read struct JSON tags for error message generation
-	validator.RegisterTagNameFunc(ValidatorJSON)
+	v.RegisterTagNameFunc(ValidatorJSONPlugin)
 
-	err := validator.Struct(body)
+	// Allow the validator to handle special validation cases pertaining to universe guide fields
+	v.RegisterStructValidation(UniverseFieldStructLevelValidation, models.UniverseGuideField{})
+
+	err := v.Struct(body)
 	if err != nil {
-		verr, err := models.GetValidationError(err)
+		verr, err := GetValidationError(err)
 		if err != nil {
-			return nil, errors.New("failed to validate")
+			return nil, err
 		}
 		if verr != "" {
-			return NewError(ErrCodeBadBody, verr, http.StatusBadRequest), nil
+			err := ErrBadBody(verr)
+			return &err, nil
 		}
 	}
 	return nil, nil
 }
 
 // ReadAndValidateBody combines ReadBody and ValidateDTO
-func ReadAndValidateBody(body io.ReadCloser, out interface{}) (*Error, error) {
+func ReadAndValidateBody(body io.ReadCloser, out interface{}) error {
 	if err := ReadBody(body, out); err != nil {
-		return nil, err
+		return err
 	}
 	valError, err := ValidateDTO(out)
 	if err != nil {
-		return nil, err
-	}
-	return valError, nil
-}
-
-// MustReadAndValidateBody combines ReadBody and ValidateDTO, enforcing strict validity
-func MustReadAndValidateBody(w http.ResponseWriter, body io.ReadCloser, out interface{}) error {
-	valError, err := ReadAndValidateBody(body, out)
-	if err != nil {
-		SendError(w, ErrBadBody(""))
 		return err
 	}
 	if valError != nil {
-		SendError(w, *valError)
-		return errors.New("validation error")
+		return *valError
 	}
 	return nil
 }

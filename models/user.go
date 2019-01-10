@@ -6,10 +6,10 @@ import (
 
 // User represents a CharacterBase user
 type User struct {
-	Generic
-	DisplayName  string `json:"display_name"`
-	Email        string `json:"email" gorm:"unique;not null"`
-	PasswordHash string `json:"-" gorm:"not null"`
+	ID           string `json:"id" db:"id"`
+	DisplayName  string `json:"display_name" db:"display_name"`
+	Email        string `json:"email" gorm:"unique;not null" db:"email"`
+	PasswordHash string `json:"-" gorm:"not null" db:"password_hash"`
 }
 
 // SetPassword sets the user's password

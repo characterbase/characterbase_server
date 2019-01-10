@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/jinzhu/gorm/dialects/postgres"
+	"github.com/segmentio/ksuid"
 )
 
 // DefaultUniverseGuide represents the default guide given to all new universes
@@ -64,14 +64,11 @@ func init() {
 // New creates a new universe
 func (s *Service) New(data dtos.ReqCreateUniverse) *models.Universe {
 	universe := &models.Universe{
+		ID:          ksuid.New().String(),
 		Name:        data.Name,
 		Description: data.Description,
-		Guide: postgres.Jsonb{
-			RawMessage: json.RawMessage(DefaultUniverseGuideJSON),
-		},
-		Settings: postgres.Jsonb{
-			RawMessage: json.RawMessage(DefaultUniverseSettingsJSON),
-		},
+		Guide:       DefaultUniverseGuide,
+		Settings:    DefaultUniverseSettings,
 	}
 	return universe
 }
@@ -79,7 +76,10 @@ func (s *Service) New(data dtos.ReqCreateUniverse) *models.Universe {
 // Find returns all Universes
 func (s *Service) Find() (*[]models.Universe, error) {
 	var universes []models.Universe
-	if err := s.Providers.DB.Find(&universes).Error; err != nil {
+	if err := s.Providers.DB.Select(
+		&universes,
+		"SELECT id, name, description, guide, settings FROM universes",
+	); err != nil {
 		return nil, err
 	}
 	return &universes, nil
@@ -88,97 +88,190 @@ func (s *Service) Find() (*[]models.Universe, error) {
 // FindByID returns a Universe by their ID
 func (s *Service) FindByID(id string) (*models.Universe, error) {
 	var universe models.Universe
-	if err := s.Providers.DB.Where("id = ?", id).First(&universe).Error; err != nil {
+	if err := s.Providers.DB.Get(
+		&universe,
+		"SELECT id, name, description, guide, settings FROM universes WHERE id = $1",
+		id,
+	); err != nil {
 		return nil, err
 	}
 	return &universe, nil
-}
-
-// FindByOwner returns a selection of universes the user owns
-func (s *Service) FindByOwner(owner *models.User) (*[]models.Universe, error) {
-	var universes []models.Universe
-	if err := s.Providers.DB.Where("owner = ?", owner.ID).Find(&universes).Error; err != nil {
-		return nil, err
-	}
-	return &universes, nil
 }
 
 // FindFromUser returns a selection of universe references the user is collaborating in
 func (s *Service) FindFromUser(user *models.User) (*[]models.UniverseReference, error) {
 	// Calling make initializes the slice to prevent JSON from marshalling empty results into "null"
 	universes := make([]models.UniverseReference, 0)
-	rows, err := s.Providers.DB.Table("collaborators").Select("universes.id, universes.name").Joins(
-		"join universes on universes.id = collaborators.universe_id",
-	).Where("user_id = ?", user.ID).Rows()
-	if err != nil {
-		fmt.Println(err)
+	if err := s.Providers.DB.Select(
+		&universes,
+		`SELECT universes.id, universes.name, collaborators.role FROM collaborators JOIN universes
+		ON universes.id = collaborators.universe_id WHERE user_id = $1`,
+		user.ID,
+	); err != nil {
 		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var universe models.UniverseReference
-		if err := s.Providers.DB.ScanRows(rows, &universe); err != nil {
-			return nil, err
-		}
-		universes = append(universes, universe)
 	}
 	return &universes, nil
 }
 
-// FindCollaboratorFromUser returns a collaborator relation from a given universe ID and user
-func (s *Service) FindCollaboratorFromUser(uid string, user *models.User) (*models.Collaborator, error) {
+// FindCollaboratorByID returns a collaborator relation from a given universe ID and user
+func (s *Service) FindCollaboratorByID(universeid string, userid string) (*models.Collaborator, error) {
 	var collaborator models.Collaborator
-	if err := s.Providers.DB.Where(
-		"user_id = ? AND universe_id = ?", user.ID, uid,
-	).First(&collaborator).Error; err != nil {
+	if err := s.Providers.DB.Get(
+		&collaborator,
+		"SELECT universe_id, user_id, role FROM collaborators WHERE universe_id = $1 AND user_id = $2",
+		universeid,
+		userid); err != nil {
 		return nil, err
 	}
 	return &collaborator, nil
 }
 
-// Save saves a universe to the database
-func (s *Service) Save(universe *models.Universe, owner *models.User) error {
-	tx := s.Providers.DB.Begin()
+// Create creates a new universe in the database
+func (s *Service) Create(universe *models.Universe, owner *models.User) error {
+	tx, err := s.Providers.DB.Beginx()
+	if err != nil {
+		return err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
 		}
 	}()
-	if s.Providers.DB.NewRecord(&universe) {
-		if err := tx.Create(&universe).Error; err != nil {
-			tx.Rollback()
-			return err
-		}
-	} else {
-		if err := tx.Save(&universe).Error; err != nil {
-			tx.Rollback()
+	rows, err := tx.NamedQuery(
+		`INSERT INTO universes (id, name, description, guide, settings) VALUES (:id, 
+	:name, :description, :guide, :settings) RETURNING id, name, description, guide, settings`,
+		universe,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.StructScan(universe); err != nil {
 			return err
 		}
 	}
-	// NOTE: GORM likes to auto-create entries, which can destroy pre-existing data
-	// Collaborator creation MUST come after universe creation so this doesn't happen
+	_, err = tx.Exec(
+		`INSERT INTO collaborators (universe_id, user_id, role) VALUES ($1,$2,$3)`,
+		universe.ID,
+		owner.ID,
+		models.CollaboratorOwner,
+	)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Update updates an existing universe in the database
+func (s *Service) Update(universe *models.Universe, owner *models.User) error {
+	tx, err := s.Providers.DB.Beginx()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+	rows, err := tx.NamedQuery(
+		`UPDATE universes SET name = :name, description = :description, guide = :guide,
+	settings = :settings WHERE id = :id RETURNING id, name, description, guide, settings`,
+		universe,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.StructScan(universe); err != nil {
+			return err
+		}
+	}
 	if owner != nil {
-		if !s.Providers.DB.NewRecord(&universe) {
-			if err := tx.Where(
-				"role = ? AND universe_id = ?",
-				models.CollaboratorOwner,
-				universe.ID,
-			).Delete(
-				models.Collaborator{},
-			).Error; err != nil {
-				tx.Rollback()
-				return err
-			}
+		_, err = tx.Exec(`DELETE FROM collaborators WHERE universe_id = $1 AND role = 2`, universe.ID)
+		if err != nil {
+			return err
 		}
-		collaborator := &models.Collaborator{
-			UniverseID: universe.ID,
-			UserID:     owner.ID,
-			Role:       models.CollaboratorOwner,
-		}
-		if err := tx.Create(&collaborator).Error; err != nil {
-			tx.Rollback()
+		_, err = tx.Exec(
+			`INSERT INTO collaborators (universe_id, user_id, role) VALUES ($1,$2,$3)`,
+			universe.ID,
+			owner.ID,
+			models.CollaboratorOwner,
+		)
+		if err != nil {
 			return err
 		}
 	}
-	return tx.Commit().Error
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// FindCollaborators returns a list of collaborators pertaining to a universe
+func (s *Service) FindCollaborators(universe *models.Universe) (*[]models.Collaborator, error) {
+	collaborators := make([]models.Collaborator, 0)
+	if err := s.Providers.DB.Select(
+		&collaborators,
+		`SELECT users.id "user.id", users.display_name "user.display_name", users.email "user.email",
+		collaborators.role FROM collaborators JOIN users ON users.id = collaborators.user_id WHERE universe_id = $1`,
+		universe.ID,
+	); err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+	return &collaborators, nil
+}
+
+// CreateCollaborator adds a collaborator to a universe
+func (s *Service) CreateCollaborator(
+	universe *models.Universe,
+	user *models.User,
+	role models.CollaboratorRole,
+) (*models.Collaborator, error) {
+	var c models.Collaborator
+	if err := s.Providers.DB.Get(
+		&c,
+		`INSERT INTO collaborators (universe_id, user_id, role) VALUES ($1, $2, $3) RETURNING *`,
+		universe.ID,
+		user.ID,
+		role,
+	); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// UpdateCollaborator updates an existing collaborator
+func (s *Service) UpdateCollaborator(
+	universe *models.Universe,
+	collaborator *models.Collaborator,
+) (*models.Collaborator, error) {
+	var c models.Collaborator
+	if err := s.Providers.DB.Get(
+		&c,
+		`UPDATE collaborators SET role = $1 WHERE universe_id = $2 AND user_id = $3 RETURNING *`,
+		collaborator.Role,
+		universe.ID,
+		collaborator.UserID,
+	); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// RemoveCollaborator deletes an existing collaborator
+func (s *Service) RemoveCollaborator(universe *models.Universe, collaborator *models.Collaborator) error {
+	if _, err := s.Providers.DB.Exec(
+		"DELETE FROM collaborators WHERE universe_id = $1 AND user_id = $2",
+		universe.ID,
+		collaborator.UserID,
+	); err != nil {
+		return err
+	}
+	return nil
 }
