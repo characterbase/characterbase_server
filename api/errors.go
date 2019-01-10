@@ -29,8 +29,8 @@ type Error struct {
 	Status  int       `json:"-"`
 }
 
-func (e *Error) String() string {
-	return fmt.Sprintf("%v: %v", e.Code, e.Message)
+func (e Error) Error() string {
+	return fmt.Sprintf("%v", e.Message)
 }
 
 // NewError creates a new API response error

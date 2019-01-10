@@ -11,5 +11,6 @@ type User interface {
 	Find() (*[]models.User, error)
 	FindByID(id string) (*models.User, error)
 	FindByEmail(email string) (*models.User, error)
-	Save(user *models.User) error
+	Create(user *models.User) error
+	Update(user *models.User) error
 }

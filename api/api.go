@@ -5,9 +5,10 @@ import (
 	"cbs/services"
 	"net/http"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/go-chi/chi"
 	"github.com/go-redis/redis"
-	"github.com/jinzhu/gorm"
 )
 
 // Service represents a resource service
@@ -18,15 +19,16 @@ type Service struct {
 
 // Services represents a group of resource services
 type Services struct {
-	Auth     services.Auth
-	User     services.User
-	Universe services.Universe
+	Auth      services.Auth
+	User      services.User
+	Universe  services.Universe
+	Character services.Character
 }
 
 // Providers represents a collection of external connections
 // (e.g. database, redis) necessary for the API to operate
 type Providers struct {
-	DB    *gorm.DB
+	DB    *sqlx.DB
 	Redis *redis.Client
 }
 
@@ -34,15 +36,18 @@ type Providers struct {
 type Middlewares struct {
 	UserSession  func(http.Handler) http.Handler
 	Collaborator func(models.CollaboratorRole) func(http.Handler) http.Handler
+	Universe     func(http.Handler) http.Handler
+	Character    func(http.Handler) http.Handler
 }
 
 // Config represents API settings loaded from a YAML configuration file
 type Config struct {
-	Host          string `yaml:"host"`
-	Port          int    `yaml:"port"`
-	DatabaseURL   string `yaml:"database_url"`
-	RedisURL      string `yaml:"redis_url"`
-	MaxSessionAge string `yaml:"max_session_age"`
+	Host               string `yaml:"host"`
+	Port               int    `yaml:"port"`
+	DatabaseURL        string `yaml:"database_url"`
+	RedisURL           string `yaml:"redis_url"`
+	MaxSessionAge      string `yaml:"max_session_age"`
+	CharacterPageLimit int    `yaml:"character_page_limit"`
 }
 
 // Server represents an API server with a loaded configuration and set of providers
@@ -64,6 +69,8 @@ func NewServer(config Config, providers *Providers, services *Services) *Server 
 		Middlewares: &Middlewares{
 			UserSession:  MwUserSession(services),
 			Collaborator: MwCollaborator(services),
+			Universe:     MwUniverse(services),
+			Character:    MwCharacter(services),
 		},
 	}
 }
