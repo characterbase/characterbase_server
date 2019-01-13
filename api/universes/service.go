@@ -105,7 +105,7 @@ func (s *Service) FindFromUser(user *models.User) (*[]models.UniverseReference, 
 	if err := s.Providers.DB.Select(
 		&universes,
 		`SELECT universes.id, universes.name, collaborators.role FROM collaborators JOIN universes
-		ON universes.id = collaborators.universe_id WHERE user_id = $1`,
+		ON universes.id = collaborators.universe_id WHERE user_id = $1 ORDER BY universes.name`,
 		user.ID,
 	); err != nil {
 		return nil, err
