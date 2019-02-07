@@ -55,7 +55,6 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func addAPIHeaders(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "application/json")
-
 	// Response status must be set after all other headers
 	w.WriteHeader(status)
 }

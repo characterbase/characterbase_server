@@ -160,6 +160,11 @@ func (m *Router) EditCollaborator(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
+	user, err := m.Services.User.FindByID(payload.ID) // TODO: Combine this and the above statement
+	if err != nil {
+		return err
+	}
+	collaborator.User = user
 	api.SendResponse(w, dtos.ResGetCollaborator{Collaborator: collaborator}, http.StatusOK)
 	return nil
 }
@@ -167,11 +172,8 @@ func (m *Router) EditCollaborator(w http.ResponseWriter, r *http.Request) error 
 // RemoveCollaborator represents a route that removes a collaborator from an existing universe
 func (m *Router) RemoveCollaborator(w http.ResponseWriter, r *http.Request) error {
 	universe, _ := r.Context().Value(api.UniverseContextKey).(*models.Universe)
-	var payload dtos.ReqRemoveCollaborator
-	if err := api.ReadAndValidateBody(r.Body, &payload); err != nil {
-		return err
-	}
-	collaborator, err := m.Services.Universe.FindCollaboratorByID(universe.ID, payload.ID)
+	id := r.URL.Query().Get("id")
+	collaborator, err := m.Services.Universe.FindCollaboratorByID(universe.ID, id)
 	if err != nil {
 		return err
 	}

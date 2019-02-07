@@ -80,7 +80,7 @@ func MwCharacter(services *Services) func(http.Handler) http.Handler {
 			id := chi.URLParam(r, "characterID")
 			character, err := services.Character.FindByID(id)
 			if err != nil {
-				return ErrNotFound("Character not found")
+				return err
 			}
 			if collaborator.Role == models.CollaboratorMember && character.OwnerID != collaborator.UserID {
 				character.HideHiddenFields()

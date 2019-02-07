@@ -27,6 +27,10 @@ func UniverseFieldStructLevelValidation(sl validator.StructLevel) {
 		m := models.UniverseGuideMetaNumber{}
 		err = mapstructure.Decode(field.Meta, &m)
 		field.Meta = m
+	case models.GuideFieldToggle:
+		m := models.UniverseGuideMetaToggle{}
+		err = mapstructure.Decode(field.Meta, &m)
+		field.Meta = m
 	case models.GuideFieldProgress:
 		m := models.UniverseGuideMetaProgress{}
 		err = mapstructure.Decode(field.Meta, &m)

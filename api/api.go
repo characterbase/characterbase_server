@@ -42,12 +42,13 @@ type Middlewares struct {
 
 // Config represents API settings loaded from a YAML configuration file
 type Config struct {
-	Host               string `yaml:"host"`
-	Port               int    `yaml:"port"`
-	DatabaseURL        string `yaml:"database_url"`
-	RedisURL           string `yaml:"redis_url"`
-	MaxSessionAge      string `yaml:"max_session_age"`
-	CharacterPageLimit int    `yaml:"character_page_limit"`
+	Host               string   `yaml:"host"`
+	Port               int      `yaml:"port"`
+	DatabaseURL        string   `yaml:"database_url"`
+	RedisURL           string   `yaml:"redis_url"`
+	MaxSessionAge      string   `yaml:"max_session_age"`
+	CharacterPageLimit int      `yaml:"character_page_limit"`
+	AllowedOrigins     []string `yaml:"allowed_origins"`
 }
 
 // Server represents an API server with a loaded configuration and set of providers

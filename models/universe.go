@@ -33,7 +33,9 @@ var (
 	GuideFieldText        GuideFieldType = "text"
 	GuideFieldDescription GuideFieldType = "description"
 	GuideFieldNumber      GuideFieldType = "number"
+	GuideFieldToggle      GuideFieldType = "toggle"
 	GuideFieldProgress    GuideFieldType = "progress"
+	GuideFieldReference   GuideFieldType = "reference"
 	GuideFieldOptions     GuideFieldType = "options"
 	GuideFieldList        GuideFieldType = "list"
 	GuideFieldPicture     GuideFieldType = "picture"
@@ -68,8 +70,8 @@ type UniverseReference struct {
 
 // UniverseSettings represents settings for a universe
 type UniverseSettings struct {
-	TitleField   string `json:"title_field"`
-	AllowAvatars bool   `json:"allow_avatars"`
+	TitleField   string `json:"titleField" validate:"required"`
+	AllowAvatars bool   `json:"allowAvatars"`
 }
 
 // UniverseGuide represents a universe guide
@@ -87,7 +89,7 @@ type UniverseGuideGroup struct {
 // UniverseGuideField represents a field inside of a universe guide
 type UniverseGuideField struct {
 	Name        string         `json:"name" validate:"required"`
-	Type        GuideFieldType `json:"type" validate:"oneof=text description number progress options list picture"`
+	Type        GuideFieldType `json:"type" validate:"oneof=text description number toggle progress options list picture"`
 	Description string         `json:"description"`
 	Required    bool           `json:"required"`
 	Default     interface{}    `json:"default"`
@@ -97,15 +99,15 @@ type UniverseGuideField struct {
 // UniverseGuideMetaText represents universe guide settings regarding a Text field
 type UniverseGuideMetaText struct {
 	Pattern   string `json:"pattern" mapstructure:"pattern"`
-	MinLength int    `json:"min_length" mapstructure:"min_length" validate:"gte=0"`
-	MaxLength int    `json:"max_length" mapstructure:"max_length" validate:"gtecsfield=MinLength"`
+	MinLength int    `json:"minLength" mapstructure:"minLength" validate:"gte=0"`
+	MaxLength int    `json:"maxLength" mapstructure:"maxLength" validate:"gtecsfield=MinLength"`
 }
 
 // UniverseGuideMetaDescription represents universe guide settings regarding a Description field
 type UniverseGuideMetaDescription struct {
 	Markdown  bool `json:"markdown" mapstructure:"markdown"`
-	MinLength int  `json:"min_length" mapstructure:"min_length" validate:"gte=0"`
-	MaxLength int  `json:"max_length" mapstructure:"max_length" validate:"gtecsfield=MinLength"`
+	MinLength int  `json:"minLength" mapstructure:"minLength" validate:"gte=0"`
+	MaxLength int  `json:"maxLength" mapstructure:"maxLength" validate:"gtecsfield=MinLength"`
 }
 
 // UniverseGuideMetaNumber represents universe guide settings regarding a Number field
@@ -115,6 +117,9 @@ type UniverseGuideMetaNumber struct {
 	Max   float64 `json:"max" mapstructure:"max" validate:"gtecsfield=Min"`
 	Tick  float64 `json:"tick" mapstructure:"tick" validate:"gte=0"`
 }
+
+// UniverseGuideMetaToggle represents universe guide settings regarding a Toggle field
+type UniverseGuideMetaToggle struct{}
 
 // UniverseGuideMetaProgress represents universe guide settings regarding a Progress field
 type UniverseGuideMetaProgress struct {
@@ -133,8 +138,8 @@ type UniverseGuideMetaOptions struct {
 
 // UniverseGuideMetaList represents universe guide settings regarding a List field
 type UniverseGuideMetaList struct {
-	MinElements int `json:"min_elements" mapstructure:"min_elements" validate:"gte=0"`
-	MaxElements int `json:"max_elements" mapstructure:"max_elements" validate:"gtecsfield=MinElements"`
+	MinElements int `json:"minElements" mapstructure:"minElements" validate:"gte=0"`
+	MaxElements int `json:"maxElements" mapstructure:"maxElements" validate:"gtecsfield=MinElements"`
 }
 
 // Collaborator represents a universe collaborator
@@ -142,7 +147,7 @@ type UniverseGuideMetaList struct {
 // foreign keys with struct tags, so an explicit SQL tag is necessary
 type Collaborator struct {
 	UniverseID string           `json:"-" db:"universe_id"`
-	UserID     string           `json:"user_id,omitempty" db:"user_id"`
+	UserID     string           `json:"userId,omitempty" db:"user_id"`
 	User       *User            `json:"user,omitempty" db:"user"`
 	Role       CollaboratorRole `json:"role" db:"role"`
 }
@@ -205,6 +210,10 @@ func (ug *UniverseGuide) SetFieldMeta() error {
 				(*g.Fields)[j].Meta = m
 			case GuideFieldNumber:
 				m := UniverseGuideMetaNumber{}
+				err = mapstructure.Decode(f.Meta, &m)
+				(*g.Fields)[j].Meta = m
+			case GuideFieldToggle:
+				m := UniverseGuideMetaToggle{}
 				err = mapstructure.Decode(f.Meta, &m)
 				(*g.Fields)[j].Meta = m
 			case GuideFieldProgress:

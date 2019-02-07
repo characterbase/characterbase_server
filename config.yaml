@@ -1,7 +1,0 @@
-host: "localhost"
-port: 3000
-database_url: "dbname=cb2 sslmode=disable"
-redis_url: "localhost:6379"
-
-max_session_age: "2h"
-character_page_limit: 25

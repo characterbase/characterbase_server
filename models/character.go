@@ -13,12 +13,12 @@ type Character struct {
 	Name       string           `json:"name" db:"name" validate:"required"`
 	Tag        string           `json:"tag" db:"tag"`
 	Owner      *User            `json:"owner,omitempty" db:"owner"`
-	OwnerID    string           `json:"owner_id,omitempty" db:"owner_id"`
+	OwnerID    string           `json:"ownerId,omitempty" db:"owner_id"`
 	Universe   *Universe        `json:"universe,omitempty" db:"universe"`
-	UniverseID string           `json:"universe_id,omitempty" db:"universe_id"`
+	UniverseID string           `json:"universeId,omitempty" db:"universe_id"`
 	Fields     *CharacterFields `json:"fields" db:"fields" validate:"required"`
-	CreatedAt  time.Time        `json:"created_at" db:"created_at"`
-	UpdatedAt  time.Time        `json:"updated_at" db:"updated_at"`
+	CreatedAt  time.Time        `json:"createdAt" db:"created_at"`
+	UpdatedAt  time.Time        `json:"updatedAt" db:"updated_at"`
 	Meta       *CharacterMeta   `json:"meta" db:"meta" validate:"required"`
 }
 
@@ -27,9 +27,9 @@ type CharacterReference struct {
 	ID        string    `json:"id" db:"id"`
 	Name      string    `json:"name" db:"name"`
 	Tag       string    `json:"tag" db:"tag"`
-	OwnerID   string    `json:"owner_id" db:"owner_id"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	OwnerID   string    `json:"ownerId" db:"owner_id"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 // CharacterMeta represents underlying information associated with a character

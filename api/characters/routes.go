@@ -80,7 +80,7 @@ func (m *Router) GetCharacter(w http.ResponseWriter, r *http.Request) error {
 	collaborator, _ := r.Context().Value(api.CollaboratorContextKey).(*models.Collaborator)
 	character, _ := r.Context().Value(api.CharacterContextKey).(*models.Character)
 	if character.Meta.Hidden &&
-		collaborator.Role == models.CollaboratorMember && collaborator.UserID != character.OwnerID {
+		collaborator.Role == models.CollaboratorMember && collaborator.UserID != character.Owner.ID {
 		return api.ErrBadAuth("You do not have permission to view this character")
 	}
 	api.SendResponse(w, dtos.ResGetCharacter{Character: character}, http.StatusOK)
@@ -93,18 +93,16 @@ func (m *Router) EditCharacter(w http.ResponseWriter, r *http.Request) error {
 	universe, _ := r.Context().Value(api.UniverseContextKey).(*models.Universe)
 	merged, _ := r.Context().Value(api.CharacterContextKey).(*models.Character)
 	merged.Fields = nil
-	if collaborator.Role == models.CollaboratorMember && collaborator.UserID != merged.OwnerID {
+	if collaborator.Role == models.CollaboratorMember && collaborator.UserID != merged.Owner.ID {
 		return api.ErrBadAuth("You do not have permission to edit this character")
 	}
 	forbidden := struct {
 		ID         string
-		OwnerID    string
 		UniverseID string
 		CreatedAt  time.Time
 		UpdatedAt  time.Time
 	}{
 		ID:         merged.ID,
-		OwnerID:    merged.OwnerID,
 		UniverseID: merged.UniverseID,
 		CreatedAt:  merged.CreatedAt,
 		UpdatedAt:  merged.UpdatedAt,
@@ -112,7 +110,7 @@ func (m *Router) EditCharacter(w http.ResponseWriter, r *http.Request) error {
 	if err := api.ReadAndValidateBody(r.Body, merged); err != nil {
 		return err
 	}
-	if merged.ID != forbidden.ID || merged.OwnerID != forbidden.OwnerID || merged.UniverseID != forbidden.UniverseID {
+	if merged.ID != forbidden.ID || merged.UniverseID != forbidden.UniverseID {
 		return api.ErrBadBody("ID cannot be changed")
 	}
 	if merged.CreatedAt != forbidden.CreatedAt || merged.UpdatedAt != forbidden.UpdatedAt {
@@ -133,7 +131,7 @@ func (m *Router) EditCharacter(w http.ResponseWriter, r *http.Request) error {
 func (m *Router) DeleteCharacter(w http.ResponseWriter, r *http.Request) error {
 	collaborator, _ := r.Context().Value(api.CollaboratorContextKey).(*models.Collaborator)
 	character, _ := r.Context().Value(api.CharacterContextKey).(*models.Character)
-	if collaborator.Role == models.CollaboratorMember && collaborator.UserID != character.OwnerID {
+	if collaborator.Role == models.CollaboratorMember && collaborator.UserID != character.Owner.ID {
 		return api.ErrBadAuth("You do not have permission to delete this character")
 	}
 	if err := m.Services.Character.Delete(character); err != nil {

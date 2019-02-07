@@ -22,6 +22,7 @@ var DefaultUniverseGuide = &models.UniverseGuide{
 					Description: "The history of this character",
 					Required:    true,
 					Default:     nil,
+					Type:        "description",
 					Meta: &models.UniverseGuideMetaText{
 						MinLength: 1,
 						MaxLength: 4000,
@@ -236,13 +237,14 @@ func (s *Service) CreateCollaborator(
 	var c models.Collaborator
 	if err := s.Providers.DB.Get(
 		&c,
-		`INSERT INTO collaborators (universe_id, user_id, role) VALUES ($1, $2, $3) RETURNING *`,
+		`INSERT INTO collaborators (universe_id, user_id, role) VALUES ($1, $2, $3) RETURNING universe_id, role`,
 		universe.ID,
 		user.ID,
 		role,
 	); err != nil {
 		return nil, err
 	}
+	c.User = user
 	return &c, nil
 }
 
@@ -254,7 +256,7 @@ func (s *Service) UpdateCollaborator(
 	var c models.Collaborator
 	if err := s.Providers.DB.Get(
 		&c,
-		`UPDATE collaborators SET role = $1 WHERE universe_id = $2 AND user_id = $3 RETURNING *`,
+		`UPDATE collaborators SET role = $1 WHERE universe_id = $2 AND user_id = $3 RETURNING universe_id, role`,
 		collaborator.Role,
 		universe.ID,
 		collaborator.UserID,

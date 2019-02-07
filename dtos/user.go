@@ -6,7 +6,7 @@ import (
 
 // ReqCreateUser represents a request DTO for creating a new user
 type ReqCreateUser struct {
-	DisplayName string `json:"display_name" validate:"required,min=3,max=16"`
+	DisplayName string `json:"displayName" validate:"required,min=3,max=16"`
 	Email       string `json:"email" validate:"required,email"`
 	Password    string `json:"password" validate:"required"`
 }

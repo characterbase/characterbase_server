@@ -13,6 +13,8 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/go-chi/cors"
+
 	"github.com/jmoiron/sqlx"
 
 	"github.com/go-redis/redis"
@@ -52,8 +54,19 @@ func newServer(config api.Config, providers *api.Providers) *api.Server {
 	services := newServices(providers, &config)
 	server := api.NewServer(config, providers, services)
 
+	// Configure CORS
+	corsM := cors.New(cors.Options{
+		AllowedOrigins:   config.AllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	})
+
 	// Mount the API middleware
 	server.Use(middleware.Logger)
+	server.Use(corsM.Handler)
 
 	// Mount the API routers
 	server.Mount("/", auth.NewRouter(server))

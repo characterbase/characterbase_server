@@ -53,8 +53,7 @@ func (s *Service) New(data dtos.ReqCreateCharacter) *models.Character {
 		Tag:    data.Tag,
 		Fields: s.convertDTOFields(*data.Fields),
 		Meta: &models.CharacterMeta{
-			Archived: data.Meta.Archived,
-			Hidden:   data.Meta.Hidden,
+			Hidden: data.Meta.Hidden,
 		},
 	}
 }
@@ -62,7 +61,10 @@ func (s *Service) New(data dtos.ReqCreateCharacter) *models.Character {
 // FindByID returns a character by their ID
 func (s *Service) FindByID(id string) (*models.Character, error) {
 	var character models.Character
-	if err := s.Providers.DB.Get(&character, "SELECT * FROM characters WHERE id = $1", id); err != nil {
+	if err := s.Providers.DB.Get(&character, `SELECT characters.id, characters.universe_id, characters.name,
+	characters.tag, characters.fields, characters.meta, characters.created_at, characters.updated_at, users.id AS
+	"owner.id", users.email AS "owner.email", users.display_name AS "owner.display_name" FROM characters JOIN users ON
+	characters.owner_id = users.id WHERE characters.id = $1`, id); err != nil {
 		return nil, err
 	}
 	return &character, nil
@@ -298,6 +300,7 @@ func (s *Service) Validate(character *models.Character, universe *models.Univers
 						}
 					case models.GuideFieldProgress:
 						v, ok := cField.Value.(float64)
+						fmt.Printf("%v - %T", cField.Value, cField.Value)
 						if !ok {
 							return api.ErrBadBody(
 								fmt.Sprintf("Field '%s' in group '%s' must be a float", field.Name, group.Name),
@@ -449,6 +452,7 @@ func (s *Service) Validate(character *models.Character, universe *models.Univers
 		for _, uGroup := range *universe.Guide.Groups {
 			if uGroup.Name == i {
 				hasGroup = &uGroup
+				break
 			}
 		}
 		if hasGroup != nil {
