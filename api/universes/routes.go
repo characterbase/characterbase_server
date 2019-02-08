@@ -25,6 +25,10 @@ func NewRouter(server *api.Server) *Router {
 			api.Handler(router.GetUniverse).ServeHTTP,
 		)
 		sr.With(server.Middlewares.Collaborator(models.CollaboratorMember)).Get(
+			"/me",
+			api.Handler(router.GetMe).ServeHTTP,
+		)
+		sr.With(server.Middlewares.Collaborator(models.CollaboratorMember)).Get(
 			"/collaborators",
 			api.Handler(router.GetCollaborators).ServeHTTP,
 		)
@@ -91,6 +95,13 @@ func (m *Router) EditUniverse(w http.ResponseWriter, r *http.Request) error {
 		return api.ErrInternal("Failed to edit universe")
 	}
 	api.SendResponse(w, dtos.ResGetUniverse{Universe: payload.Universe}, http.StatusOK)
+	return nil
+}
+
+// GetMe returns the collaborator assigned with the request
+func (m *Router) GetMe(w http.ResponseWriter, r *http.Request) error {
+	collaborator, _ := r.Context().Value(api.CollaboratorContextKey).(*models.Collaborator)
+	api.SendResponse(w, dtos.ResGetCollaborator{Collaborator: collaborator}, http.StatusOK)
 	return nil
 }
 
