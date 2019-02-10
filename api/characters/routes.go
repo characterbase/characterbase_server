@@ -205,26 +205,3 @@ func (m *Router) DeleteAvatar(w http.ResponseWriter, r *http.Request) error {
 	w.Write([]byte(""))
 	return nil
 }
-
-/* SearchCharacters represents a route that searches for characters associated with a universe
-func (m *Router) SearchCharacters(w http.ResponseWriter, r *http.Request) error {
-	universe, _ := r.Context().Value(api.UniverseContextKey).(*models.Universe)
-	collaborator, _ := r.Context().Value(api.CollaboratorContextKey).(*models.Collaborator)
-
-	qpage := r.URL.Query().Get("p")
-	page, err := strconv.Atoi(qpage)
-	if err != nil {
-		page = 0
-	}
-
-	squery := r.URL.Query().Get("q")
-
-	ctx := dtos.CharacterQuery{Collaborator: collaborator, Page: page, Query: ""}
-	characters, total, err := m.Services.Character.FindByUniverse(universe, ctx)
-	if err != nil {
-		return err
-	}
-	api.SendResponse(w, dtos.ResGetCharacters{Characters: characters, Page: page, Total: total}, http.StatusOK)
-	return nil
-}
-*/

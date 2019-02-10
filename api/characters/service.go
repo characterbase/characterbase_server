@@ -18,7 +18,7 @@ import (
 )
 
 // AvatarSize represents the width and height dimensions for character avatars
-const AvatarSize = 256
+const AvatarSize = 512
 
 // Service represents a service implementation for the "characters" resource
 type Service api.Service
