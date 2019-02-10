@@ -65,6 +65,7 @@ func (s *Service) New(data dtos.ReqCreateCharacter) *models.Character {
 	}
 }
 
+// FindCharacterImages returns images associated with a character
 func (s *Service) FindCharacterImages(id string) (models.CharacterImages, error) {
 	images := make(models.CharacterImages)
 
@@ -120,7 +121,7 @@ func (s *Service) FindByUniverse(
 	if ctx.Collaborator.Role != models.CollaboratorMember {
 		qs := "LEFT JOIN character_images ON character_images.character_id = characters.id WHERE universe_id = $1"
 		query = fmt.Sprintf("%v %v AND name ILIKE $2 ORDER BY name LIMIT $3 OFFSET $4", query, qs)
-		cquery = fmt.Sprintf("%v %v", cquery, qs)
+		cquery = fmt.Sprintf("%v %v AND name ILIKE $2", cquery, qs)
 
 		// Retrieve characters
 		if err := s.Providers.DB.Select(
@@ -135,14 +136,14 @@ func (s *Service) FindByUniverse(
 		}
 
 		// Retrieve total count
-		if err := s.Providers.DB.Get(&count, cquery, universe.ID); err != nil {
+		if err := s.Providers.DB.Get(&count, cquery, universe.ID, ctx.Query); err != nil {
 			return nil, 0, err
 		}
 	} else {
 		qs := `LEFT JOIN character_images ON character_images.character_id = characters.id WHERE universe_id = $1 AND 
 		(meta->'hidden'='false' OR owner_id=$2)`
 		query = fmt.Sprintf("%v %v AND name ILIKE $3 ORDER BY name LIMIT $4 OFFSET $5", query, qs)
-		cquery = fmt.Sprintf("%v %v", cquery, qs)
+		cquery = fmt.Sprintf("%v %v AND name ILIKE $3", cquery, qs)
 
 		// Retrieve characters
 		if err := s.Providers.DB.Select(
@@ -158,7 +159,7 @@ func (s *Service) FindByUniverse(
 		}
 
 		// Retrieve total count
-		if err := s.Providers.DB.Get(&count, cquery, universe.ID, ctx.Collaborator.UserID); err != nil {
+		if err := s.Providers.DB.Get(&count, cquery, universe.ID, ctx.Collaborator.UserID, ctx.Query); err != nil {
 			return nil, 0, err
 		}
 	}

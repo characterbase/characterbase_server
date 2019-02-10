@@ -17,14 +17,14 @@ var DefaultUniverseGuide = &models.UniverseGuide{
 			Fields: &[]models.UniverseGuideField{
 				{
 					Name:        "Biography",
-					Description: "The history of this character",
+					Description: "A short summary about this character",
 					Required:    true,
 					Default:     nil,
 					Type:        "description",
-					Meta: &models.UniverseGuideMetaText{
+					Meta: &models.UniverseGuideMetaDescription{
 						MinLength: 1,
 						MaxLength: 4000,
-						Pattern:   "",
+						Markdown:  true,
 					},
 				},
 			},
