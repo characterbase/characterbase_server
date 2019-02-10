@@ -15,7 +15,7 @@ import (
 // Service represents a service implementation for the "auth" resource
 type Service api.Service
 
-func newAPIKey() string {
+func genSessionKey() string {
 	return ksuid.New().String()
 }
 
@@ -41,15 +41,12 @@ func (s *Service) Authenticate(email, password string) (*models.User, error) {
 
 // Login creates a new session between the request and the user
 func (s *Service) Login(user *models.User, w http.ResponseWriter) error {
-	sesskey := newAPIKey()
+	sesskey := genSessionKey()
 	serialized, err := json.Marshal(user)
 	if err != nil {
 		return err
 	}
-	maxage, err := time.ParseDuration(s.Config.MaxSessionAge)
-	if err != nil {
-		return err
-	}
+	maxage, _ := time.ParseDuration(s.Config.MaxSessionAge)
 	s.Providers.Redis.Set(fmt.Sprintf("session:%v", sesskey), serialized, maxage)
 	http.SetCookie(w, &http.Cookie{
 		Name:   "user_session",
@@ -80,6 +77,11 @@ func (s *Service) User(req *http.Request) (*models.User, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Refresh TTL
+	maxage, _ := time.ParseDuration(s.Config.MaxSessionAge)
+	_ = s.Providers.Redis.Expire(fmt.Sprintf("session:%v", sesskey.Value), maxage)
+
 	if err := json.Unmarshal([]byte(serialized), &user); err != nil {
 		return nil, err
 	}

@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+// CharacterImages represents a map of field keys to image URLs associated with the character
+type CharacterImages map[string]string
+
 // Character represents a CharacterBase character
 type Character struct {
 	ID         string           `json:"id" db:"id"`
@@ -17,6 +20,7 @@ type Character struct {
 	Universe   *Universe        `json:"universe,omitempty" db:"universe"`
 	UniverseID string           `json:"universeId,omitempty" db:"universe_id"`
 	Fields     *CharacterFields `json:"fields" db:"fields" validate:"required"`
+	Images     CharacterImages  `json:"images"`
 	CreatedAt  time.Time        `json:"createdAt" db:"created_at"`
 	UpdatedAt  time.Time        `json:"updatedAt" db:"updated_at"`
 	Meta       *CharacterMeta   `json:"meta" db:"meta" validate:"required"`
@@ -30,6 +34,8 @@ type CharacterReference struct {
 	OwnerID   string    `json:"ownerId" db:"owner_id"`
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
+	AvatarURL *string   `json:"avatarUrl" db:"avatar_url"`
+	Hidden    bool      `json:"hidden" db:"hidden"`
 }
 
 // CharacterMeta represents underlying information associated with a character

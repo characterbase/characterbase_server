@@ -101,9 +101,8 @@ func SendResponse(w http.ResponseWriter, data interface{}, status int) {
 }
 
 // ReadBody reads a JSON request body into a deserialized DTO
-func ReadBody(body io.ReadCloser, out interface{}) error {
+func ReadBody(body io.Reader, out interface{}) error {
 	data, err := ioutil.ReadAll(body)
-	defer body.Close()
 	if err != nil {
 		return err
 	}
@@ -139,7 +138,7 @@ func ValidateDTO(body interface{}) (*Error, error) {
 }
 
 // ReadAndValidateBody combines ReadBody and ValidateDTO
-func ReadAndValidateBody(body io.ReadCloser, out interface{}) error {
+func ReadAndValidateBody(body io.Reader, out interface{}) error {
 	if err := ReadBody(body, out); err != nil {
 		return err
 	}

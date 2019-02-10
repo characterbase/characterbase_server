@@ -28,6 +28,10 @@ func NewRouter(server *api.Server) *Router {
 			"/me",
 			api.Handler(router.GetMe).ServeHTTP,
 		)
+		sr.With(server.Middlewares.Collaborator(models.CollaboratorOwner)).Delete(
+			"/",
+			api.Handler(router.DeleteUniverse).ServeHTTP,
+		)
 		sr.With(server.Middlewares.Collaborator(models.CollaboratorMember)).Get(
 			"/collaborators",
 			api.Handler(router.GetCollaborators).ServeHTTP,
@@ -192,6 +196,17 @@ func (m *Router) RemoveCollaborator(w http.ResponseWriter, r *http.Request) erro
 		return api.ErrBadBody("Cannot remove owner")
 	}
 	if err := m.Services.Universe.RemoveCollaborator(universe, collaborator); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	w.Write([]byte(""))
+	return nil
+}
+
+// DeleteUniverse represents a route that deletes an existing universe
+func (m *Router) DeleteUniverse(w http.ResponseWriter, r *http.Request) error {
+	universe, _ := r.Context().Value(api.UniverseContextKey).(*models.Universe)
+	if err := m.Services.Universe.Delete(universe); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

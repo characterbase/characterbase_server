@@ -1,7 +1,7 @@
 CREATE TABLE characters (
     id text PRIMARY KEY,
-    universe_id text REFERENCES universes(id),
-    owner_id text REFERENCES users(id),
+    universe_id text REFERENCES universes(id) ON DELETE CASCADE,
+    owner_id text REFERENCES users(id) ON DELETE CASCADE,
     name text NOT NULL,
     tag text,
     fields jsonb NOT NULL,

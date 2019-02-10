@@ -1,17 +1,24 @@
 package characters
 
 import (
+	"bytes"
 	"cbs/api"
 	"cbs/dtos"
 	"cbs/models"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"io"
 	"math"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/segmentio/ksuid"
+	"github.com/disintegration/imaging"
 )
+
+// AvatarSize represents the width and height dimensions for character avatars
+const AvatarSize = 256
 
 // Service represents a service implementation for the "characters" resource
 type Service api.Service
@@ -48,7 +55,7 @@ func (s *Service) convertDTOFields(fields dtos.ReqCharacterFields) *models.Chara
 // New creates a new character
 func (s *Service) New(data dtos.ReqCreateCharacter) *models.Character {
 	return &models.Character{
-		ID:     ksuid.New().String(),
+		ID:     s.Providers.ShortID.MustGenerate(),
 		Name:   data.Name,
 		Tag:    data.Tag,
 		Fields: s.convertDTOFields(*data.Fields),
@@ -56,6 +63,23 @@ func (s *Service) New(data dtos.ReqCreateCharacter) *models.Character {
 			Hidden: data.Meta.Hidden,
 		},
 	}
+}
+
+func (s *Service) FindCharacterImages(id string) (models.CharacterImages, error) {
+	images := make(models.CharacterImages)
+
+	rows, err := s.Providers.DB.Queryx(`SELECT key, url FROM character_images WHERE character_id=$1`, id)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var key, url string
+		if err := rows.Scan(&key, &url); err != nil {
+			return nil, err
+		}
+		images[key] = url
+	}
+	return images, nil
 }
 
 // FindByID returns a character by their ID
@@ -67,6 +91,12 @@ func (s *Service) FindByID(id string) (*models.Character, error) {
 	characters.owner_id = users.id WHERE characters.id = $1`, id); err != nil {
 		return nil, err
 	}
+	images, err := s.FindCharacterImages(id)
+	if err != nil {
+		return nil, err
+	}
+	character.Images = images
+
 	return &character, nil
 }
 
@@ -78,12 +108,18 @@ func (s *Service) FindByUniverse(
 	var (
 		count      = 0
 		characters = make([]models.CharacterReference, 0)
-		query      = "SELECT id, name, tag, owner_id, created_at, updated_at FROM characters"
-		cquery     = "SELECT count(*) FROM characters"
+		query      = `SELECT id, name, tag, owner_id, created_at, updated_at, character_images.url AS avatar_url,
+		meta->'hidden' AS hidden FROM characters`
+		cquery = "SELECT count(*) FROM characters"
 	)
+	if ctx.Query == "" {
+		ctx.Query = "%"
+	} else {
+		ctx.Query = fmt.Sprintf("%%%v%%", strings.Replace(ctx.Query, " ", "%", -1))
+	}
 	if ctx.Collaborator.Role != models.CollaboratorMember {
-		qs := "WHERE universe_id = $1"
-		query = fmt.Sprintf("%v %v  LIMIT $2 OFFSET $3", query, qs)
+		qs := "LEFT JOIN character_images ON character_images.character_id = characters.id WHERE universe_id = $1"
+		query = fmt.Sprintf("%v %v AND name ILIKE $2 ORDER BY name LIMIT $3 OFFSET $4", query, qs)
 		cquery = fmt.Sprintf("%v %v", cquery, qs)
 
 		// Retrieve characters
@@ -91,6 +127,7 @@ func (s *Service) FindByUniverse(
 			&characters,
 			query,
 			universe.ID,
+			ctx.Query,
 			s.Config.CharacterPageLimit,
 			ctx.Page*s.Config.CharacterPageLimit,
 		); err != nil {
@@ -102,8 +139,9 @@ func (s *Service) FindByUniverse(
 			return nil, 0, err
 		}
 	} else {
-		qs := "WHERE universe_id = $1 AND (meta->'hidden'='false' OR owner_id=$2)"
-		query = fmt.Sprintf("%v %v LIMIT $3 OFFSET $4", query, qs)
+		qs := `LEFT JOIN character_images ON character_images.character_id = characters.id WHERE universe_id = $1 AND 
+		(meta->'hidden'='false' OR owner_id=$2)`
+		query = fmt.Sprintf("%v %v AND name ILIKE $3 ORDER BY name LIMIT $4 OFFSET $5", query, qs)
 		cquery = fmt.Sprintf("%v %v", cquery, qs)
 
 		// Retrieve characters
@@ -112,6 +150,7 @@ func (s *Service) FindByUniverse(
 			query,
 			universe.ID,
 			ctx.Collaborator.UserID,
+			ctx.Query,
 			s.Config.CharacterPageLimit,
 			ctx.Page*s.Config.CharacterPageLimit,
 		); err != nil {
@@ -126,6 +165,57 @@ func (s *Service) FindByUniverse(
 	return &characters, count, nil
 }
 
+// Search returns a selection of characters according to a specified search query
+func (s *Service) Search(
+	universe *models.Universe,
+	squery string,
+	ctx dtos.CharacterQuery,
+) (*[]models.CharacterReference, int, error) {
+	squery = strings.Replace(squery, " ", "%", -1)
+	var (
+		references []models.CharacterReference
+		count      = 0
+		query      = `SELECT id, name, tag, owner_id, created_at, updated_at, character_images.url AS avatar_url
+		FROM characters WHERE name ILIKE $1 AND universe_id = $2`
+		cquery = `SELECT count(*) FROM characters WHERE name ILIKE $1 AND universe_id = $2`
+	)
+	if ctx.Collaborator.Role != models.CollaboratorMember {
+		query = fmt.Sprintf("%v ORDER BY name LIMIT $3 OFFSET $4 ", query)
+
+		// Retrieve characters
+		if err := s.Providers.DB.Select(
+			&references,
+			query,
+			squery,
+			universe.ID,
+			s.Config.CharacterPageLimit,
+			ctx.Page*s.Config.CharacterPageLimit,
+		); err != nil {
+			return nil, 0, err
+		}
+	} else {
+		query = fmt.Sprintf("%v AND (meta->'hidden'='false' OR owner_id=$3) ORDER BY name LIMIT $4 OFFSET $5", query)
+
+		// Retrieve characters
+		if err := s.Providers.DB.Select(
+			&references,
+			query,
+			squery,
+			universe.ID,
+			ctx.Collaborator.UserID,
+			s.Config.CharacterPageLimit,
+			ctx.Page*s.Config.CharacterPageLimit,
+		); err != nil {
+			return nil, 0, err
+		}
+	}
+	if err := s.Providers.DB.Get(&count, cquery, squery, universe.ID); err != nil {
+		return nil, 0, err
+	}
+
+	return &references, count, nil
+}
+
 // Create saves a new character to the database
 func (s *Service) Create(
 	universe *models.Universe,
@@ -136,7 +226,7 @@ func (s *Service) Create(
 	if err := s.Providers.DB.Get(
 		&c,
 		`INSERT INTO characters (id, universe_id, owner_id, name, tag, fields, meta) VALUES
-		($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+		($1, $2, $3, $4, $5, $6, $7) RETURNING id, universe_id, name, tag, fields, meta`,
 		character.ID,
 		universe.ID,
 		owner.ID,
@@ -147,6 +237,7 @@ func (s *Service) Create(
 	); err != nil {
 		return nil, err
 	}
+	c.Owner = owner
 	return &c, nil
 }
 
@@ -156,7 +247,7 @@ func (s *Service) Update(character *models.Character) (*models.Character, error)
 	character.UpdatedAt = time.Now()
 	rows, err := s.Providers.DB.NamedQuery(
 		`UPDATE characters SET name = :name, tag = :tag, fields = :fields, meta = :meta,
-		updated_at = :updated_at WHERE id = :id RETURNING *`,
+		updated_at = :updated_at WHERE id = :id RETURNING id, name, tag, fields, meta, updated_at, created_at`,
 		character,
 	)
 	if err != nil {
@@ -168,6 +259,11 @@ func (s *Service) Update(character *models.Character) (*models.Character, error)
 			return nil, err
 		}
 	}
+	images, err := s.FindCharacterImages(character.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.Images = images
 	return &c, nil
 }
 
@@ -484,4 +580,78 @@ func (s *Service) Delete(character *models.Character) error {
 		return err
 	}
 	return nil
+}
+
+// SetImage assigns an image to a character
+func (s *Service) SetImage(character *models.Character, key string, image io.Reader) error {
+	path := fmt.Sprintf("%s_%s", character.ID, key)
+
+	optimized, err := s.optimizeImage(image)
+	if err != nil {
+		return err
+	}
+
+	url, err := s.Providers.Storage.Upload(optimized, path)
+	if err != nil {
+		return err
+	}
+	if _, err := s.Providers.DB.Exec(
+		`INSERT INTO character_images (character_id, key, url) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		character.ID,
+		key,
+		url,
+	); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DeleteImage removes an image associated with a character
+func (s *Service) DeleteImage(character *models.Character, key string) error {
+	path := fmt.Sprintf("%v_%v", character.ID, key)
+	if err := s.Providers.Storage.Delete(path); err != nil {
+		return err
+	}
+	if _, err := s.Providers.DB.Exec(
+		`DELETE FROM character_images WHERE character_id=$1 AND key=$2`,
+		character.ID,
+		key,
+	); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DeleteAll deletes all characters from a specified universe
+func (s *Service) DeleteAll(universe *models.Universe) error {
+	var ids []models.Character
+	if err := s.Providers.DB.Select(
+		&ids,
+		`SELECT id FROM characters WHERE universe_id = $1`,
+		universe.ID,
+	); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		s.DeleteImage(&id, "avatar")
+	}
+	if _, err := s.Providers.DB.Exec(`DELETE FROM characters WHERE universe_id = $1`, universe.ID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) optimizeImage(file io.Reader) (io.Reader, error) {
+	buff := new(bytes.Buffer)
+	img, _, err := image.Decode(file)
+	if err != nil {
+		return nil, err
+	}
+
+	dstImg := imaging.Thumbnail(img, AvatarSize, AvatarSize, imaging.CatmullRom)
+	if err := jpeg.Encode(buff, dstImg, nil); err != nil {
+		return nil, err
+	}
+
+	return bytes.NewReader(buff.Bytes()), nil
 }

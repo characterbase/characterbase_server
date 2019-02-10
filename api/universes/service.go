@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-
-	"github.com/segmentio/ksuid"
 )
 
 // DefaultUniverseGuide represents the default guide given to all new universes
@@ -65,7 +63,7 @@ func init() {
 // New creates a new universe
 func (s *Service) New(data dtos.ReqCreateUniverse) *models.Universe {
 	universe := &models.Universe{
-		ID:          ksuid.New().String(),
+		ID:          s.Providers.ShortID.MustGenerate(),
 		Name:        data.Name,
 		Description: data.Description,
 		Guide:       DefaultUniverseGuide,
@@ -97,6 +95,14 @@ func (s *Service) FindByID(id string) (*models.Universe, error) {
 		return nil, err
 	}
 	return &universe, nil
+}
+
+// Delete removes a universe from the database
+func (s *Service) Delete(universe *models.Universe) error {
+	if _, err := s.Providers.DB.Exec(`DELETE FROM universes WHERE id = $1`, universe.ID); err != nil {
+		return err
+	}
+	return nil
 }
 
 // FindFromUser returns a selection of universe references the user is collaborating in

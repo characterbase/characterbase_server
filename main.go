@@ -13,14 +13,13 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/go-chi/cors"
-
-	"github.com/jmoiron/sqlx"
-
-	"github.com/go-redis/redis"
+	"github.com/teris-io/shortid"
 
 	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/cors"
+	"github.com/go-redis/redis"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
+	"github.com/jmoiron/sqlx"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -104,8 +103,32 @@ func main() {
 	}
 	log.Printf("Redis connection OK\n")
 
+	// Connect to AWS S3
+	log.Printf("Connecting to AWS S3... (bucket: %v)\n", config.S3Bucket)
+	storage, err := api.NewStorage(api.StorageConfig{
+		AccessKey:    config.S3AccessKey,
+		AccessSecret: config.S3AccessSecret,
+		Region:       "us-east-2",
+		Bucket:       config.S3Bucket,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	// Instantiate the ShortID generator
+	log.Printf("Initialising the ShortID generator... (worker: %v; seed: %v)", 0, config.ModelIDSeed)
+	sid, err := shortid.New(0, shortid.DefaultABC, config.ModelIDSeed)
+	if err != nil {
+		panic(err)
+	}
+
 	// Setup the API providers
-	providers := &api.Providers{DB: db, Redis: redisdb}
+	providers := &api.Providers{
+		DB:      db,
+		Redis:   redisdb,
+		Storage: storage,
+		ShortID: sid,
+	}
 
 	// Create the API server
 	server := newServer(*config, providers)

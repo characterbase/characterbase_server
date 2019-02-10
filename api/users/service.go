@@ -4,8 +4,6 @@ import (
 	"cbs/api"
 	"cbs/dtos"
 	"cbs/models"
-
-	"github.com/segmentio/ksuid"
 )
 
 // Service represents a service implementation for the "users" resource
@@ -14,7 +12,7 @@ type Service api.Service
 // New creates a new User
 func (s *Service) New(data dtos.ReqCreateUser) *models.User {
 	user := &models.User{
-		ID:          ksuid.New().String(),
+		ID:          s.Providers.ShortID.MustGenerate(),
 		DisplayName: data.DisplayName,
 		Email:       data.Email}
 	user.SetPassword(data.Password)

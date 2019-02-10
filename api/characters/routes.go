@@ -6,10 +6,14 @@ import (
 	"cbs/models"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi"
 )
+
+// MaxRequestSize represents the maximum allowed size for multipart-form requests
+const MaxRequestSize = 5 * 1024 * 1024
 
 // Router represents a router for the "characters" resource
 type Router api.Router
@@ -26,11 +30,16 @@ func NewRouter(server *api.Server) *Router {
 	)
 	router.Get("/", api.Handler(router.GetCharacters).ServeHTTP)
 	router.Post("/", api.Handler(router.CreateCharacter).ServeHTTP)
+	router.With(server.Middlewares.Collaborator(models.CollaboratorOwner)).Delete(
+		"/",
+		api.Handler(router.DeleteCharacters).ServeHTTP,
+	)
 	router.Route("/{characterID}", func(r chi.Router) {
 		r.Use(server.Middlewares.Character)
 		r.Get("/", api.Handler(router.GetCharacter).ServeHTTP)
 		r.Patch("/", api.Handler(router.EditCharacter).ServeHTTP)
 		r.Delete("/", api.Handler(router.DeleteCharacter).ServeHTTP)
+		r.Delete("/avatar", api.Handler(router.DeleteAvatar).ServeHTTP)
 	})
 	return router
 }
@@ -40,7 +49,11 @@ func (m *Router) CreateCharacter(w http.ResponseWriter, r *http.Request) error {
 	universe, _ := r.Context().Value(api.UniverseContextKey).(*models.Universe)
 	user, _ := r.Context().Value(api.UserContextKey).(*models.User)
 	var payload dtos.ReqCreateCharacter
-	if err := api.ReadAndValidateBody(r.Body, &payload); err != nil {
+
+	// Limits the request size to MaxRequestSize
+	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestSize)
+
+	if err := api.ReadAndValidateBody(strings.NewReader(r.FormValue("data")), &payload); err != nil {
 		return err
 	}
 	character := m.Services.Character.New(payload)
@@ -51,6 +64,20 @@ func (m *Router) CreateCharacter(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+
+	avatar, _, err := r.FormFile("avatar")
+	if err == nil {
+		if err := m.Services.Character.SetImage(saved, "avatar", avatar); err != nil {
+			return err
+		}
+	}
+
+	images, err := m.Services.Character.FindCharacterImages(saved.ID)
+	if err != nil {
+		saved.Images = make(models.CharacterImages)
+	}
+	saved.Images = images
+
 	api.SendResponse(w, dtos.ResGetCharacter{Character: saved}, http.StatusCreated)
 	return nil
 }
@@ -66,12 +93,23 @@ func (m *Router) GetCharacters(w http.ResponseWriter, r *http.Request) error {
 		page = 0
 	}
 
-	ctx := dtos.CharacterQuery{Collaborator: collaborator, Page: page, Query: ""}
+	ctx := dtos.CharacterQuery{Collaborator: collaborator, Page: page, Query: r.URL.Query().Get("q")}
 	characters, total, err := m.Services.Character.FindByUniverse(universe, ctx)
 	if err != nil {
 		return err
 	}
 	api.SendResponse(w, dtos.ResGetCharacters{Characters: characters, Page: page, Total: total}, http.StatusOK)
+	return nil
+}
+
+// DeleteCharacters represents a route that deletes all characters from a universe
+func (m *Router) DeleteCharacters(w http.ResponseWriter, r *http.Request) error {
+	universe, _ := r.Context().Value(api.UniverseContextKey).(*models.Universe)
+	if err := m.Services.Character.DeleteAll(universe); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	w.Write([]byte(""))
 	return nil
 }
 
@@ -107,9 +145,21 @@ func (m *Router) EditCharacter(w http.ResponseWriter, r *http.Request) error {
 		CreatedAt:  merged.CreatedAt,
 		UpdatedAt:  merged.UpdatedAt,
 	}
-	if err := api.ReadAndValidateBody(r.Body, merged); err != nil {
+
+	// Limits the request size to MaxRequestSize
+	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestSize)
+
+	if err := api.ReadAndValidateBody(strings.NewReader(r.PostFormValue("data")), merged); err != nil {
 		return err
 	}
+
+	avatar, _, err := r.FormFile("avatar")
+	if err == nil {
+		if err := m.Services.Character.SetImage(merged, "avatar", avatar); err != nil {
+			return err
+		}
+	}
+
 	if merged.ID != forbidden.ID || merged.UniverseID != forbidden.UniverseID {
 		return api.ErrBadBody("ID cannot be changed")
 	}
@@ -123,6 +173,8 @@ func (m *Router) EditCharacter(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+
+	updated.Owner = merged.Owner
 	api.SendResponse(w, dtos.ResGetCharacter{Character: updated}, http.StatusOK)
 	return nil
 }
@@ -137,7 +189,42 @@ func (m *Router) DeleteCharacter(w http.ResponseWriter, r *http.Request) error {
 	if err := m.Services.Character.Delete(character); err != nil {
 		return err
 	}
+	m.Services.Character.DeleteImage(character, "avatar")
 	w.WriteHeader(http.StatusNoContent)
 	w.Write([]byte(""))
 	return nil
 }
+
+// DeleteAvatar deletes the avatar assigned to a character
+func (m *Router) DeleteAvatar(w http.ResponseWriter, r *http.Request) error {
+	character, _ := r.Context().Value(api.CharacterContextKey).(*models.Character)
+	if err := m.Services.Character.DeleteImage(character, "avatar"); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	w.Write([]byte(""))
+	return nil
+}
+
+/* SearchCharacters represents a route that searches for characters associated with a universe
+func (m *Router) SearchCharacters(w http.ResponseWriter, r *http.Request) error {
+	universe, _ := r.Context().Value(api.UniverseContextKey).(*models.Universe)
+	collaborator, _ := r.Context().Value(api.CollaboratorContextKey).(*models.Collaborator)
+
+	qpage := r.URL.Query().Get("p")
+	page, err := strconv.Atoi(qpage)
+	if err != nil {
+		page = 0
+	}
+
+	squery := r.URL.Query().Get("q")
+
+	ctx := dtos.CharacterQuery{Collaborator: collaborator, Page: page, Query: ""}
+	characters, total, err := m.Services.Character.FindByUniverse(universe, ctx)
+	if err != nil {
+		return err
+	}
+	api.SendResponse(w, dtos.ResGetCharacters{Characters: characters, Page: page, Total: total}, http.StatusOK)
+	return nil
+}
+*/

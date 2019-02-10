@@ -21,5 +21,6 @@ type Universe interface {
 	UpdateCollaborator(universe *models.Universe, collaborator *models.Collaborator) (*models.Collaborator, error)
 	Create(universe *models.Universe, owner *models.User) error
 	Update(universe *models.Universe, owner *models.User) error
+	Delete(universe *models.Universe) error
 	RemoveCollaborator(universe *models.Universe, collaborator *models.Collaborator) error
 }

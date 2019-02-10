@@ -5,10 +5,10 @@ import (
 	"cbs/services"
 	"net/http"
 
-	"github.com/jmoiron/sqlx"
-
 	"github.com/go-chi/chi"
 	"github.com/go-redis/redis"
+	"github.com/jmoiron/sqlx"
+	"github.com/teris-io/shortid"
 )
 
 // Service represents a resource service
@@ -28,8 +28,10 @@ type Services struct {
 // Providers represents a collection of external connections
 // (e.g. database, redis) necessary for the API to operate
 type Providers struct {
-	DB    *sqlx.DB
-	Redis *redis.Client
+	DB      *sqlx.DB
+	Redis   *redis.Client
+	Storage *Storage
+	ShortID *shortid.Shortid
 }
 
 // Middlewares represents a collection of API-specific middlewares
@@ -49,6 +51,10 @@ type Config struct {
 	MaxSessionAge      string   `yaml:"max_session_age"`
 	CharacterPageLimit int      `yaml:"character_page_limit"`
 	AllowedOrigins     []string `yaml:"allowed_origins"`
+	S3AccessKey        string   `yaml:"s3_access_key"`
+	S3AccessSecret     string   `yaml:"s3_access_secret"`
+	S3Bucket           string   `yaml:"s3_bucket"`
+	ModelIDSeed        uint64   `yaml:"model_id_seed"`
 }
 
 // Server represents an API server with a loaded configuration and set of providers
