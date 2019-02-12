@@ -82,7 +82,7 @@ func MwCharacter(services *Services) func(http.Handler) http.Handler {
 			if err != nil {
 				return err
 			}
-			if collaborator.Role == models.CollaboratorMember && character.OwnerID != collaborator.User.ID {
+			if collaborator.Role == models.CollaboratorMember && character.Owner.ID != collaborator.UserID {
 				character.HideHiddenFields()
 			}
 			ctx := context.WithValue(r.Context(), CharacterContextKey, character)
