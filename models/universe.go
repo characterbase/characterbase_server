@@ -92,7 +92,6 @@ type UniverseGuideField struct {
 	Type        GuideFieldType `json:"type" validate:"oneof=text description number toggle progress options list picture"`
 	Description string         `json:"description"`
 	Required    bool           `json:"required"`
-	Default     interface{}    `json:"default"`
 	Meta        interface{}    `json:"meta" validate:"required"`
 }
 

@@ -19,7 +19,6 @@ var DefaultUniverseGuide = &models.UniverseGuide{
 					Name:        "Biography",
 					Description: "A short summary about this character",
 					Required:    true,
-					Default:     nil,
 					Type:        "description",
 					Meta: &models.UniverseGuideMetaDescription{
 						MinLength: 1,
