@@ -70,9 +70,9 @@ type UniverseReference struct {
 
 // UniverseSettings represents settings for a universe
 type UniverseSettings struct {
-	TitleField           string `json:"titleField" validate:"required"`
-	AllowAvatars         bool   `json:"allowAvatars"`
-	AllowNominalOrdering bool   `json:"allowNominalOrdering"`
+	TitleField                   string `json:"titleField" validate:"required"`
+	AllowAvatars                 bool   `json:"allowAvatars"`
+	AllowLexicographicalOrdering bool   `json:"allowLexicographicalOrdering"`
 }
 
 // UniverseGuide represents a universe guide

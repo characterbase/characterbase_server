@@ -33,8 +33,9 @@ var DefaultUniverseGuide = &models.UniverseGuide{
 
 // DefaultUniverseSettings represents the default settings given to all new universes
 var DefaultUniverseSettings = &models.UniverseSettings{
-	TitleField:   "Name",
-	AllowAvatars: true,
+	TitleField:                   "Name",
+	AllowAvatars:                 true,
+	AllowLexicographicalOrdering: false,
 }
 
 // DefaultUniverseGuideJSON represents the JSON marshalled version of DefaultUniverseGuide
