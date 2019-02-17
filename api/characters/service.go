@@ -60,7 +60,9 @@ func (s *Service) New(data dtos.ReqCreateCharacter) *models.Character {
 		Tag:    data.Tag,
 		Fields: s.convertDTOFields(*data.Fields),
 		Meta: &models.CharacterMeta{
-			Hidden: data.Meta.Hidden,
+			Hidden:     data.Meta.Hidden,
+			NameHidden: data.Meta.NameHidden,
+			Name:       &data.Meta.Name,
 		},
 	}
 }
@@ -86,10 +88,7 @@ func (s *Service) FindCharacterImages(id string) (models.CharacterImages, error)
 // FindByID returns a character by their ID
 func (s *Service) FindByID(id string) (*models.Character, error) {
 	var character models.Character
-	if err := s.Providers.DB.Get(&character, `SELECT characters.id, characters.universe_id, characters.name,
-	characters.tag, characters.fields, characters.meta, characters.created_at, characters.updated_at, users.id AS
-	"owner.id", users.email AS "owner.email", users.display_name AS "owner.display_name" FROM characters JOIN users ON
-	characters.owner_id = users.id WHERE characters.id = $1`, id); err != nil {
+	if err := s.Providers.DB.Get(&character, QueryFindByID, id); err != nil {
 		return nil, err
 	}
 	images, err := s.FindCharacterImages(id)
@@ -109,16 +108,180 @@ func (s *Service) FindByUniverse(
 	var (
 		count      = 0
 		characters = make([]models.CharacterReference, 0)
-		query      = `SELECT id, name, tag, owner_id, created_at, updated_at, character_images.url AS avatar_url,
+		query      = ""
+		/* query      = `SELECT id, name, tag, owner_id, created_at, updated_at, character_images.url AS avatar_url,
 		meta->'hidden' AS hidden FROM characters`
-		cquery = "SELECT count(*) FROM characters"
+		cquery = "SELECT count(*) FROM characters"*/
 	)
+
+	// Normalize the search query
 	if ctx.Query == "" {
-		ctx.Query = "%"
+		query = "%"
 	} else {
-		ctx.Query = fmt.Sprintf("%%%v%%", strings.Replace(ctx.Query, " ", "%", -1))
+		query = fmt.Sprintf("%%%v%%", strings.Replace(ctx.Query, " ", "%", -1))
 	}
+
+	// Create the search query
+	gensql := s.Providers.SQLBuilder.Select(`id, name, tag, owner_id, created_at, updated_at, character_images.url
+	AS avatar_url, (meta->>'hidden')::boolean AS hidden, CASE WHEN meta->>'nameHidden' IS NULL THEN false ELSE
+	(meta->>'nameHidden')::boolean END AS name_hidden, meta->'name' AS parsed_name`).From(`characters`).LeftJoin(`
+	character_images ON character_images.character_id = characters.id`).Where(`universe_id = ? AND name ILIKE ?`,
+		universe.ID, query)
+
+	// Factor whether all characters should be included into the query
 	if ctx.Collaborator.Role != models.CollaboratorMember {
+		// Factor whether hidden characters should be included or not
+		if !ctx.IncludeHidden {
+			gensql = gensql.Where(`(meta->>'hidden')::boolean IS FALSE`)
+		}
+	} else {
+		// Factor whether hidden characters should be included or not
+		if !ctx.IncludeHidden {
+			gensql = gensql.Where(`((meta->>'hidden')::boolean IS FALSE OR (owner_id=? AND (meta->>'hidden')::boolean
+			IS FALSE))`, ctx.Collaborator.UserID)
+		} else {
+			gensql = gensql.Where(`((meta->>'hidden')::boolean IS FALSE OR owner_id=?)`, ctx.Collaborator.UserID)
+		}
+	}
+
+	// Factor whether characters should be sorted nominally or lexicographically
+	if ctx.Sort == dtos.CharacterQuerySortLexicographical {
+		gensql = gensql.OrderBy(`meta->'name'->>'lastName' = '' OR meta->'name'->>'firstName' = '' OR (meta->>
+		'nameHidden')::boolean IS TRUE, CASE WHEN meta->'name'->>'preferredName' != '' THEN meta->'name'->>
+		'preferredName' ELSE meta->'name'->>'lastName' END, meta->'name'->>'lastName', meta->'name'->>'firstName'`)
+	} else {
+		gensql = gensql.OrderBy(`(meta->>'nameHidden')::boolean IS TRUE, name`)
+	}
+
+	// Apply the rest of the statements
+	gensql = gensql.Limit(uint64(s.Config.CharacterPageLimit)).Offset(uint64(ctx.Page * s.Config.CharacterPageLimit))
+
+	// Convert to SQL statement
+	querysql, queryargs, err := gensql.ToSql()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Create the count query
+	gensql = s.Providers.SQLBuilder.Select(`COUNT(*)`).From(`characters`).Where(`universe_id = ? AND name ILIKE ?`,
+		universe.ID, query)
+
+	// Factor whether all characters should be included in the query
+	if ctx.Collaborator.Role != models.CollaboratorMember {
+		// Factor whether hidden characters should be included or not
+		if !ctx.IncludeHidden {
+			gensql = gensql.Where(`(meta->>'hidden')::boolean IS FALSE`)
+		}
+	} else {
+		// Factor whether hidden charactesr should be included or not
+		if !ctx.IncludeHidden {
+			gensql = gensql.Where(`((meta->>'hidden')::boolean IS FALSE OR (owner_id=? AND (meta->>'hidden')::boolean
+			IS FALSE))`, ctx.Collaborator.UserID)
+		} else {
+			gensql = gensql.Where(`((meta->>'hidden')::boolean IS FALSE OR owner_id=?)`, ctx.Collaborator.UserID)
+		}
+	}
+
+	// Convert to SQL statement
+	countsql, countargs, err := gensql.ToSql()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Run the queries
+	if err := s.Providers.DB.Select(&characters, querysql, queryargs...); err != nil {
+		return nil, 0, err
+	}
+	if err := s.Providers.DB.Get(&count, countsql, countargs...); err != nil {
+		return nil, 0, err
+	}
+
+	for i, c := range characters {
+		if ctx.Collaborator.Role == models.CollaboratorMember && c.OwnerID != ctx.Collaborator.UserID {
+			characters[i].HideHiddenFields()
+		}
+	}
+
+	return &characters, count, nil
+	/*if ctx.Collaborator.Role != models.CollaboratorMember {
+		var err error
+		// Use admin database query
+		if ctx.Sort == dtos.CharacterQuerySortLexicographical {
+			// Use admin lexicographical database query
+
+		} else {
+			// Use admin nominal database query
+			q, args, _ := s.Providers.SQLBuilder.Select(`id, name, tag, owner_id, created_at, updated_at,
+			character_images.url AS avatar_url, meta->'hidden' AS hidden, CASE WHEN meta->'nameHidden' IS NULL THEN false ELSE (meta->>'nameHidden')::boolean END AS name_hidden, meta->'name' AS parsed_name`).
+				From(`characters`).LeftJoin(`character_images ON character_images.character_id = characters.id`).
+				Where(`universe_id = ? AND name ILIKE ?`, universe.ID, query).
+				OrderBy(`CASE WHEN (meta->>'nameHidden')::boolean=true THEN NULL ELSE name END, name`).Limit(
+				uint64(s.Config.CharacterPageLimit)).Offset(uint64(ctx.Page)).ToSql()
+			err = s.Providers.DB.Select(
+				&characters,
+				q,
+				args...,
+			)
+		}
+
+		if err != nil {
+			return nil, 0, err
+		}
+
+		// Use admin database count query
+		if err := s.Providers.DB.Get(
+			&count,
+			QueryFindByUniverseAllCount,
+			universe.ID,
+			query,
+		); err != nil {
+			return nil, 0, err
+		}
+	} else {
+		var err error
+		// Use public database query
+		if ctx.Sort == dtos.CharacterQuerySortLexicographical {
+			// Use public lexicographical database query
+			err = s.Providers.DB.Select(
+				&characters,
+				QueryFindByUniversePublicLex,
+				universe.ID,
+				ctx.Collaborator.UserID,
+				query,
+				s.Config.CharacterPageLimit,
+				ctx.Page*s.Config.CharacterPageLimit,
+			)
+		} else {
+			// Use public nominal database query
+			err = s.Providers.DB.Select(
+				&characters,
+				QueryFindByUniversePublicNom,
+				universe.ID,
+				ctx.Collaborator.UserID,
+				query,
+				s.Config.CharacterPageLimit,
+				ctx.Page*s.Config.CharacterPageLimit,
+			)
+		}
+
+		if err != nil {
+			return nil, 0, err
+		}
+
+		// Use public database count query
+		if err := s.Providers.DB.Get(
+			&count,
+			QueryFindByUniversePublicCount,
+			universe.ID,
+			query,
+			ctx.Collaborator.UserID,
+		); err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return &characters, count, nil*/
+	/*if ctx.Collaborator.Role != models.CollaboratorMember {
 		qs := "LEFT JOIN character_images ON character_images.character_id = characters.id WHERE universe_id = $1"
 		query = fmt.Sprintf("%v %v AND name ILIKE $2 ORDER BY name LIMIT $3 OFFSET $4", query, qs)
 		cquery = fmt.Sprintf("%v %v AND name ILIKE $2", cquery, qs)
@@ -140,7 +303,7 @@ func (s *Service) FindByUniverse(
 			return nil, 0, err
 		}
 	} else {
-		qs := `LEFT JOIN character_images ON character_images.character_id = characters.id WHERE universe_id = $1 AND 
+		qs := `LEFT JOIN character_images ON character_images.character_id = characters.id WHERE universe_id = $1 AND
 		(meta->'hidden'='false' OR owner_id=$2)`
 		query = fmt.Sprintf("%v %v AND name ILIKE $3 ORDER BY name LIMIT $4 OFFSET $5", query, qs)
 		cquery = fmt.Sprintf("%v %v AND name ILIKE $3", cquery, qs)
@@ -163,7 +326,7 @@ func (s *Service) FindByUniverse(
 			return nil, 0, err
 		}
 	}
-	return &characters, count, nil
+	return &characters, count, nil*/
 }
 
 // Search returns a selection of characters according to a specified search query

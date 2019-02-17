@@ -9,6 +9,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/jmoiron/sqlx"
 	"github.com/teris-io/shortid"
+	"gopkg.in/Masterminds/squirrel.v1"
 )
 
 // Service represents a resource service
@@ -28,10 +29,11 @@ type Services struct {
 // Providers represents a collection of external connections
 // (e.g. database, redis) necessary for the API to operate
 type Providers struct {
-	DB      *sqlx.DB
-	Redis   *redis.Client
-	Storage *Storage
-	ShortID *shortid.Shortid
+	DB         *sqlx.DB
+	Redis      *redis.Client
+	Storage    *Storage
+	ShortID    *shortid.Shortid
+	SQLBuilder *squirrel.StatementBuilderType
 }
 
 // Middlewares represents a collection of API-specific middlewares

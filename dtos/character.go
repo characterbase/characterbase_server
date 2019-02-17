@@ -4,11 +4,24 @@ import (
 	"cbs/models"
 )
 
+// CharacterQuerySort represents an order for sorting character lists from the database
+type CharacterQuerySort string
+
+var (
+	// CharacterQuerySortNominal expects a list of characters sorted alphabetically
+	CharacterQuerySortNominal CharacterQuerySort = "nominal"
+
+	// CharacterQuerySortLexicographical expects a list of characters sorted intelligently via their names
+	CharacterQuerySortLexicographical CharacterQuerySort = "lexicographical"
+)
+
 // CharacterQuery represents injectable context information for querying datasets from this service
 type CharacterQuery struct {
-	Collaborator *models.Collaborator
-	Page         int
-	Query        string
+	Collaborator  *models.Collaborator
+	Page          int
+	Query         string
+	Sort          CharacterQuerySort
+	IncludeHidden bool
 }
 
 // ReqCreateCharacter represents a request DTO for creating a new character
@@ -21,8 +34,10 @@ type ReqCreateCharacter struct {
 
 // ReqCharacterMeta represents a sub-request DTO for a character's meta settings
 type ReqCharacterMeta struct {
-	Archived bool `json:"archived"`
-	Hidden   bool `json:"hidden"`
+	Archived   bool                     `json:"archived"`
+	Hidden     bool                     `json:"hidden"`
+	NameHidden bool                     `json:"nameHidden"`
+	Name       models.CharacterMetaName `json:"name"`
 }
 
 // ReqCharacterFields represents a sub-request DTO for a character's fields

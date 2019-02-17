@@ -4,6 +4,7 @@ import (
 	"cbs/api"
 	"cbs/dtos"
 	"cbs/models"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -87,13 +88,35 @@ func (m *Router) GetCharacters(w http.ResponseWriter, r *http.Request) error {
 	universe, _ := r.Context().Value(api.UniverseContextKey).(*models.Universe)
 	collaborator, _ := r.Context().Value(api.CollaboratorContextKey).(*models.Collaborator)
 
-	qpage := r.URL.Query().Get("p")
-	page, err := strconv.Atoi(qpage)
+	// Extract the page from the URL parameters
+	upage := r.URL.Query().Get("p")
+	page, err := strconv.Atoi(upage)
 	if err != nil {
 		page = 0
 	}
 
-	ctx := dtos.CharacterQuery{Collaborator: collaborator, Page: page, Query: r.URL.Query().Get("q")}
+	// Extract the search query from the URL parameters
+	query := r.URL.Query().Get("q")
+
+	// Extract the sorting order from the URL parameters
+	usort := r.URL.Query().Get("s")
+	sort := dtos.CharacterQuerySortNominal
+	if usort == string(dtos.CharacterQuerySortLexicographical) {
+		sort = dtos.CharacterQuerySortLexicographical
+	}
+
+	// Extract whether hidden characters should be included from the URL parameters
+	uAllowHidden := r.URL.Query().Get("hidden")
+	fmt.Println(uAllowHidden)
+	allowHidden, err := strconv.ParseBool(uAllowHidden)
+	if err != nil {
+		allowHidden = true
+	}
+
+	// Create the database query context
+	ctx := dtos.CharacterQuery{Collaborator: collaborator, Page: page, Query: query, Sort: sort,
+		IncludeHidden: allowHidden}
+
 	characters, total, err := m.Services.Character.FindByUniverse(universe, ctx)
 	if err != nil {
 		return err

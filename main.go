@@ -13,13 +13,13 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/teris-io/shortid"
-
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-redis/redis"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/jmoiron/sqlx"
+	"github.com/teris-io/shortid"
+	"gopkg.in/Masterminds/squirrel.v1"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -122,12 +122,16 @@ func main() {
 		panic(err)
 	}
 
+	// Create the query builder
+	builder := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
 	// Setup the API providers
 	providers := &api.Providers{
-		DB:      db,
-		Redis:   redisdb,
-		Storage: storage,
-		ShortID: sid,
+		DB:         db,
+		Redis:      redisdb,
+		Storage:    storage,
+		ShortID:    sid,
+		SQLBuilder: &builder,
 	}
 
 	// Create the API server
